@@ -1,0 +1,33 @@
+import { Bookmark, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { cards, decks } from '../content/cards'
+import { Sheet } from '../components/Sheet'
+import { Motif } from '../components/Art'
+import { CardSchema, type AppData, type Card, type DeckId } from '../core/types'
+
+export function Saved({ data, onSave, onUpsert, onDelete }: { data: AppData; onSave: (id: string) => void; onUpsert: (card: Card) => void; onDelete: (id: string) => void }) {
+  const [tab, setTab] = useState<'saved' | 'own'>('saved')
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [editor, setEditor] = useState<Card | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<Card | null>(null)
+  const allCards = [...cards, ...data.customCards]
+  // Session snapshots keep removed or edited custom bookmarks readable until the conversation ends.
+  data.session?.queue.forEach(card => { if (!allCards.some(item => item.id === card.id)) allCards.push(card) })
+  const source = tab === 'own' ? data.customCards : allCards.filter(card => data.saved.includes(card.id))
+  const shown = source.filter(card => (filter === 'all' || card.deckId === filter) && `${card.prompt} ${card.tags.join(' ')}`.toLowerCase().includes(search.toLowerCase()))
+  return <section className="saved-page"><div className="page-heading"><p className="eyebrow">THE ONES TO COME BACK TO</p><h1>A little collection.<br /><em>A lot of us.</em></h1><p>Keep a question close. Or put your own into words.</p></div><div className="saved-toolbar"><div className="segmented"><button aria-pressed={tab === 'saved'} className={tab === 'saved' ? 'selected' : ''} onClick={() => setTab('saved')}>Saved questions</button><button aria-pressed={tab === 'own'} className={tab === 'own' ? 'selected' : ''} onClick={() => setTab('own')}>Our own cards</button></div><button className="button secondary" onClick={() => setEditor('new')}><Plus size={17} /> Add our own card</button></div>
+    {source.length > 0 && <div className="search-row"><label className="search-field"><Search size={18} /><input aria-label="Search questions" placeholder="Find a little something…" value={search} onChange={e => setSearch(e.target.value)} /></label><select aria-label="Filter by deck" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All decks</option>{decks.map(deck => <option key={deck.id} value={deck.id}>{deck.name}</option>)}</select></div>}
+    {shown.length === 0 ? <div className="empty-state"><Motif kind={tab === 'own' ? 'window' : 'loops'} /><h2>{source.length ? 'Nothing here just yet.' : tab === 'own' ? 'Some questions only we could ask.' : 'Some questions stay with you.'}</h2><p>{source.length ? 'Try a different word or choose all decks.' : tab === 'own' ? 'Make a card for a thought, a wonder, or a little thing you’d love to ask.' : 'Tap the bookmark on any question to keep it here for another day.'}</p>{tab === 'own' && !source.length && <button className="text-button" onClick={() => setEditor('new')}><Plus size={16} /> Write our first card</button>}</div> : <div className="saved-grid">{shown.map(card => <article className="saved-card" key={card.id}><div className="question-top"><span className="eyebrow">{decks.find(deck => deck.id === card.deckId)?.name}</span><button className="icon-button" aria-label={data.saved.includes(card.id) ? 'Unsave question' : 'Save question'} aria-pressed={data.saved.includes(card.id)} onClick={() => onSave(card.id)}><Bookmark size={19} fill={data.saved.includes(card.id) ? 'currentColor' : 'none'} /></button></div><h2>{card.prompt}</h2><div className="saved-card-bottom"><span>{card.depth === 1 ? 'Light' : card.depth === 2 ? 'Thoughtful' : 'Deep'}</span>{card.id.startsWith('custom-') && <div><button className="icon-button" aria-label="Edit our card" onClick={() => setEditor(card)}><Pencil size={17} /></button><button className="icon-button" aria-label="Delete our card" onClick={() => setDeleting(card)}><Trash2 size={17} /></button></div>}</div></article>)}</div>}
+    {editor && <CardEditor card={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onSubmit={card => { onUpsert(card); setEditor(null); setTab('own') }} />}
+    <Sheet open={!!deleting} onClose={() => setDeleting(null)} title="Let this card go?" description="This removes it from your own cards and saved collection. An ongoing conversation keeps its original copy."><p className="confirmation-quote">{deleting?.prompt}</p><div className="sheet-actions"><button className="button secondary" onClick={() => setDeleting(null)}>Keep it</button><button className="button primary" onClick={() => { if (deleting) onDelete(deleting.id); setDeleting(null) }}>Delete card</button></div></Sheet>
+  </section>
+}
+
+function CardEditor({ card, onClose, onSubmit }: { card?: Card; onClose: () => void; onSubmit: (card: Card) => void }) {
+  const [prompt, setPrompt] = useState(card?.prompt ?? '')
+  const [deckId, setDeckId] = useState<DeckId>(card?.deckId ?? 'us')
+  const [depth, setDepth] = useState<1 | 2 | 3>(card?.depth ?? 1)
+  const [error, setError] = useState('')
+  return <Sheet open onClose={onClose} title={card ? 'A little edit' : 'A question, from us'} description="Just the question. The answer belongs in your conversation."><form className="card-editor" onSubmit={e => { e.preventDefault(); const result = CardSchema.safeParse({ ...card, id: card?.id ?? `custom-${crypto.randomUUID()}`, deckId, depth, kind: 'question', prompt, tags: card?.tags ?? ['our-own'] }); if (!result.success) setError('Write a question between 3 and 600 characters.'); else { try { onSubmit(result.data) } catch (error) { setError(error instanceof Error ? error.message : 'This card could not be saved.') } } }}><label>Your question<textarea autoFocus value={prompt} onChange={e => setPrompt(e.target.value)} maxLength={600} rows={4} placeholder="Something you’ve always wanted to ask…" required minLength={3} /></label><div className="form-two"><label>Belongs in<select value={deckId} onChange={e => setDeckId(e.target.value as DeckId)}>{decks.map(deck => <option value={deck.id} key={deck.id}>{deck.name}</option>)}</select></label><label>Depth<select value={depth} onChange={e => setDepth(Number(e.target.value) as 1 | 2 | 3)}><option value={1}>Light</option><option value={2}>Thoughtful</option><option value={3}>Deep</option></select></label></div><p className="field-note">Stored in this browser. It joins eligible sessions in its deck and depth.</p>{error && <p role="alert" className="field-error">{error}</p>}<button className="button primary" type="submit">{card ? 'Save changes' : 'Add our card'}</button></form></Sheet>
+}
