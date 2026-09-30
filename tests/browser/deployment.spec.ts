@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
+import { waitForVisualState } from './helpers/visual-state'
 
 async function artifactServer(revision = () => 1) {
   const base = process.env.VITE_BASE_PATH || '/our_hearts/'
@@ -144,17 +145,21 @@ test('a newly installed worker waits during play and applies only after an expli
     await page.goto(url)
     await cacheReady(page)
     await page.reload()
+    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
     await page.getByRole('button', { name: /let.s talk/i }).click()
+    await waitForVisualState(page)
     await page.getByRole('button', { name: 'Reveal question' }).click()
+    await expect(page.getByRole('button', { name: 'Next card' })).toBeVisible()
     const data = await page.evaluate(() => localStorage.getItem('our_hearts:data:v1'))
+    expect(JSON.parse(data!).session.revealed).toBe(true)
     const loads = await page.evaluate(() => sessionStorage.getItem('verification:loads'))
     revision = 2
     await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update() })
     await expect(page.getByText(/a fresh version is ready/i)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('button', { name: 'Next card' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Update now' })).toHaveCount(0)
     expect(await page.evaluate(() => sessionStorage.getItem('verification:loads'))).toBe(loads)
     expect(await page.evaluate(() => localStorage.getItem('our_hearts:data:v1'))).toBe(data)
+    await expect(page.getByRole('button', { name: 'Next card' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Update now' })).toHaveCount(0)
     await page.getByRole('link', { name: 'our hearts home' }).click()
     await Promise.all([
       page.waitForEvent('load'),
