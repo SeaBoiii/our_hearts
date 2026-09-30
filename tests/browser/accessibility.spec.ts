@@ -4,13 +4,14 @@ import { questions } from '../../src/content/cards'
 import { createSession } from '../../src/core/session'
 import { STORAGE_KEY } from '../../src/core/storage'
 import { freshData, type AppData, type Card } from '../../src/core/types'
+import { waitForVisualState } from './helpers/visual-state'
 
 async function seed(page: Page, data: AppData = freshData()) {
   await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: data })
 }
 
 async function assertAxe(page: Page, state: string) {
-  await page.evaluate(() => document.fonts.ready)
+  await waitForVisualState(page)
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
   if (results.violations.length) {
     await test.info().attach(`axe-${state}`, { body: JSON.stringify(results.violations, null, 2), contentType: 'application/json' })
